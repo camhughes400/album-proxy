@@ -94,7 +94,7 @@ app.get('/search', async (req, res) => {
       tracks = fallbackResponse.data.tracks?.items || [];
     }
 
-    -- STRICT FAMILY-FRIENDLY FILTER
+    // STRICT FAMILY-FRIENDLY FILTER
     const safeTracks = tracks.filter(track => 
       track.explicit === false && 
       isCleanText(track.name) && 
