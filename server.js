@@ -12,6 +12,15 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 let spotifyToken = null;
 let tokenExpiration = 0;
 
+// Banned words in title or album name for extra family-friendly safety
+const BANNED_KEYWORDS = ['explicit', 'uncensored', 'parental advisory'];
+
+function isCleanText(text) {
+  if (!text) return true;
+  const lower = text.toLowerCase();
+  return !BANNED_KEYWORDS.some(word => lower.includes(word));
+}
+
 async function getSpotifyToken() {
   if (spotifyToken && Date.now() < tokenExpiration) {
     return spotifyToken;
@@ -33,11 +42,11 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// Simple pixel converter
+// Convert cover image to 300x300 RGB Matrix
 async function processImageTo300Pixels(imageUrl) {
   if (!imageUrl) return [];
   try {
-    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 5000 });
     const imageBuffer = Buffer.from(response.data, 'binary');
 
     const { data, info } = await sharp(imageBuffer)
@@ -55,29 +64,48 @@ async function processImageTo300Pixels(imageUrl) {
     }
     return pixelArray;
   } catch (err) {
-    console.error('Error processing pixels:', err.message);
+    console.error('Error processing cover art:', err.message);
     return [];
   }
 }
 
-// 1. Simple Track Search (Limit 10)
+// 1. Family-Friendly Track Search Endpoint
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
     const rawQuery = req.query.q ? req.query.q.trim() : '';
     const searchQuery = rawQuery !== '' ? rawQuery : 'a';
 
+    const randomOffset = Math.floor(Math.random() * 10);
+
     const spotifyResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=${randomOffset}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    const tracks = spotifyResponse.data.tracks?.items;
-    if (!tracks || tracks.length === 0) {
+    let tracks = spotifyResponse.data.tracks?.items || [];
+
+    // Fallback if random offset produced 0 results
+    if (tracks.length === 0) {
+      const fallbackResponse = await axios.get(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=0`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      tracks = fallbackResponse.data.tracks?.items || [];
+    }
+
+    -- STRICT FAMILY-FRIENDLY FILTER
+    const safeTracks = tracks.filter(track => 
+      track.explicit === false && 
+      isCleanText(track.name) && 
+      isCleanText(track.album?.name)
+    );
+
+    if (safeTracks.length === 0) {
       return res.json({ success: false, results: [] });
     }
 
-    const chosenTrack = tracks[Math.floor(Math.random() * tracks.length)];
+    const chosenTrack = safeTracks[Math.floor(Math.random() * safeTracks.length)];
     const coverUrl = chosenTrack.album?.images[0]?.url;
 
     let pixelData = [];
@@ -102,7 +130,7 @@ app.get('/search', async (req, res) => {
   }
 });
 
-// 2. Simple Artist Search for Appraisal Menu
+// 2. Artist Search Endpoint for Appraisal Menu
 app.get('/search-artist', async (req, res) => {
   try {
     const rawQuery = req.query.q ? req.query.q.trim() : '';
