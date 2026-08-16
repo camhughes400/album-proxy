@@ -73,7 +73,11 @@ async function processImageTo300Pixels(imageUrl) {
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
-    const rawQuery = req.query.q ? req.query.q.trim() : 'a';
+    let rawQuery = req.query.q ? req.query.q.trim() : 'a';
+    
+    // Clean string formatting to prevent 400 Bad Request errors from Spotify
+    rawQuery = rawQuery.replace(/[^a-zA-Z0-9 :_]/g, '');
+
     const randomOffset = Math.floor(Math.random() * 5);
 
     const spotifyResponse = await axios.get(
@@ -114,36 +118,7 @@ app.get('/search', async (req, res) => {
       }]
     });
   } catch (error) {
-    console.error('Search handler error:', error.message);
-    res.json({ success: false, results: [] });
-  }
-});
-
-app.get('/search-artist', async (req, res) => {
-  try {
-    const rawQuery = req.query.q ? req.query.q.trim() : '';
-    if (!rawQuery) {
-      return res.json({ success: false, results: [] });
-    }
-
-    const token = await getSpotifyToken();
-
-    const response = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(rawQuery)}&type=artist&limit=5`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-
-    const artists = response.data.artists?.items || [];
-    const formattedResults = artists.map(a => ({
-      id: a.id,
-      name: a.name,
-      genres: a.genres && a.genres.length > 0 ? a.genres.slice(0, 2).join(', ') : 'Artist',
-      imageUrl: a.images[0]?.url || ''
-    }));
-
-    res.json({ success: true, results: formattedResults });
-  } catch (error) {
-    console.error('Artist search error:', error.message);
+    console.error('Search handler error:', error.response?.data || error.message);
     res.json({ success: false, results: [] });
   }
 });
