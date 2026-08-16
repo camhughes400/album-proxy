@@ -12,6 +12,7 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 let spotifyToken = null;
 let tokenExpiration = 0;
 
+// Visual & Textual Blacklist for Roblox TOS Compliance
 const BANNED_ALBUMS = ['nevermind']; 
 const BANNED_KEYWORDS = ['explicit', 'uncensored', 'parental advisory'];
 
@@ -70,18 +71,17 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
+// 1. Track Search & Roll Endpoint
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
     let rawQuery = req.query.q ? req.query.q.trim() : 'a';
     
-    // Clean string formatting to prevent 400 Bad Request errors from Spotify
+    // Clean query string parameters to prevent 400 Bad Request errors
     rawQuery = rawQuery.replace(/[^a-zA-Z0-9 :_]/g, '');
 
-    const randomOffset = Math.floor(Math.random() * 5);
-
     const spotifyResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(rawQuery)}&type=track&limit=20&offset=${randomOffset}`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(rawQuery)}&type=track&limit=10`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
@@ -119,6 +119,36 @@ app.get('/search', async (req, res) => {
     });
   } catch (error) {
     console.error('Search handler error:', error.response?.data || error.message);
+    res.json({ success: false, results: [] });
+  }
+});
+
+// 2. Artist Search Stub Endpoint
+app.get('/search-artist', async (req, res) => {
+  try {
+    const rawQuery = req.query.q ? req.query.q.trim() : '';
+    if (!rawQuery) {
+      return res.json({ success: false, results: [] });
+    }
+
+    const token = await getSpotifyToken();
+
+    const response = await axios.get(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(rawQuery)}&type=artist&limit=5`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const artists = response.data.artists?.items || [];
+    const formattedResults = artists.map(a => ({
+      id: a.id,
+      name: a.name,
+      genres: a.genres && a.genres.length > 0 ? a.genres.slice(0, 2).join(', ') : 'Artist',
+      imageUrl: a.images[0]?.url || ''
+    }));
+
+    res.json({ success: true, results: formattedResults });
+  } catch (error) {
+    console.error('Artist search error:', error.message);
     res.json({ success: false, results: [] });
   }
 });
