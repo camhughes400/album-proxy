@@ -1,5 +1,6 @@
 const express = require('express');
 const axios = require('axios');
+const sharp = require('sharp'); // Make sure sharp is installed via npm
 require('dotenv').config();
 
 const app = express();
@@ -10,15 +11,6 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 
 let spotifyToken = null;
 let tokenExpiration = 0;
-
-// Verified Direct Roblox Image IDs (Guaranteed HD Cover Rendering)
-const GUARANTEED_IMAGE_IDS = [
-  "142323381",  // Kanye West - Graduation
-  "6071593339", // Drake - Certified Lover Boy / Views
-  "184284562",  // Taylor Swift - 1989
-  "1233054199", // Kendrick Lamar - DAMN
-  "154018260"   // Pink Floyd - Dark Side of the Moon
-];
 
 async function getSpotifyToken() {
   if (spotifyToken && Date.now() < tokenExpiration) {
@@ -41,6 +33,33 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
+// Convert Spotify Cover Image into a 300x300 RGB Pixel Matrix
+async function processImageTo300Pixels(imageUrl) {
+  try {
+    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const imageBuffer = Buffer.from(response.data, 'binary');
+
+    // Resize image to exactly 300x300 RGB raw pixels
+    const { data, info } = await sharp(imageBuffer)
+      .resize(300, 300, { fit: 'cover' })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const pixelArray = [];
+    for (let i = 0; i < data.length; i += info.channels) {
+      pixelArray.push({
+        r: data[i],
+        g: data[i + 1],
+        b: data[i + 2]
+      });
+    }
+    return pixelArray;
+  } catch (err) {
+    console.error('Error processing 300x300 pixel image:', err.message);
+    return [];
+  }
+}
+
 app.get('/search', async (req, res) => {
   try {
     const searchQuery = req.query.q;
@@ -61,19 +80,20 @@ app.get('/search', async (req, res) => {
     }
 
     const chosenAlbum = albums[Math.floor(Math.random() * albums.length)];
-    const title = chosenAlbum.name;
-    const artist = chosenAlbum.artists[0]?.name || 'Unknown Artist';
+    const coverUrl = chosenAlbum.images[0]?.url;
 
-    // Select a guaranteed direct Image Asset ID
-    const imageId = GUARANTEED_IMAGE_IDS[Math.floor(Math.random() * GUARANTEED_IMAGE_IDS.length)];
+    let pixelData = [];
+    if (coverUrl) {
+      pixelData = await processImageTo300Pixels(coverUrl);
+    }
 
     res.json({
       success: true,
       results: [{
-        title: title,
-        artist: artist,
+        title: chosenAlbum.name,
+        artist: chosenAlbum.artists[0]?.name || 'Unknown Artist',
         releaseYear: chosenAlbum.release_date ? chosenAlbum.release_date.substring(0, 4) : 'N/A',
-        coverUrl: `rbxassetid://${imageId}`
+        pixels: pixelData
       }]
     });
   } catch (error) {
