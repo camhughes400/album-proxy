@@ -33,7 +33,6 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// Simple, direct image pixel converter
 async function processImageTo300Pixels(imageUrl) {
   if (!imageUrl) return [];
   try {
@@ -60,19 +59,30 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
+// 1. Search Track Endpoint (For Rolling)
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
-    const searchQuery = req.query.q || 'a';
+    const searchQuery = req.query.q || 'year:2020';
 
-    // Simple search like before
+    const randomOffset = Math.floor(Math.random() * 5);
+
     const spotifyResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=${randomOffset}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    const tracks = spotifyResponse.data.tracks?.items;
+    let tracks = spotifyResponse.data.tracks?.items;
+
     if (!tracks || tracks.length === 0) {
+      const fallbackResponse = await axios.get(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=0`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      tracks = fallbackResponse.data.tracks?.items || [];
+    }
+
+    if (tracks.length === 0) {
       return res.json({ success: false, results: [] });
     }
 
@@ -97,6 +107,35 @@ app.get('/search', async (req, res) => {
     });
   } catch (error) {
     console.error('Search handler error:', error.message);
+    res.json({ success: false, results: [] });
+  }
+});
+
+// 2. Search Artist Endpoint (For Appraisal Menu)
+app.get('/search-artist', async (req, res) => {
+  try {
+    const token = await getSpotifyToken();
+    const artistName = req.query.q;
+
+    if (!artistName) {
+      return res.json({ success: false, results: [] });
+    }
+
+    const response = await axios.get(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(artistName)}&type=artist&limit=5`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const artists = response.data.artists?.items || [];
+    const formattedResults = artists.map(a => ({
+      name: a.name,
+      genres: a.genres ? a.genres.slice(0, 2).join(', ') : 'Artist',
+      imageUrl: a.images[0]?.url || ''
+    }));
+
+    res.json({ success: true, results: formattedResults });
+  } catch (error) {
+    console.error('Artist search error:', error.message);
     res.json({ success: false, results: [] });
   }
 });
