@@ -33,7 +33,7 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// Convert image URL to 300x300 RGB Matrix safely
+// Convert track cover image to 300x300 RGB Matrix
 async function processImageTo300Pixels(imageUrl) {
   if (!imageUrl) return [];
   try {
@@ -55,46 +55,46 @@ async function processImageTo300Pixels(imageUrl) {
     }
     return pixelArray;
   } catch (err) {
-    console.error('Error processing image pixels:', err.message);
+    console.error('Error processing cover art:', err.message);
     return [];
   }
 }
 
-// Safe Catalog Search with Error Fallbacks
-async function fetchSafeAlbum(token, searchQuery) {
+// Track Search Handler
+async function fetchSafeTrack(token, searchQuery) {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
-  // If a specific artist query is passed in, use it directly
+  // Specific Artist/Song query
   if (searchQuery && searchQuery.trim() !== '') {
     try {
       const artistRes = await axios.get(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=album&limit=20`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=50`,
         { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
       );
-      const items = artistRes.data.albums?.items;
+      const items = artistRes.data.tracks?.items;
       if (items && items.length > 0) {
         return items[Math.floor(Math.random() * items.length)];
       }
     } catch (e) {
-      console.error('Artist search failed, falling back to random:', e.message);
+      console.error('Track search failed, trying fallback:', e.message);
     }
   }
 
-  -- Fallback: Safe Random Search
+  // Global Random Track Fallback
   const randomChar = chars.charAt(Math.floor(Math.random() * chars.length));
-  const safeOffset = Math.floor(Math.random() * 50);
+  const safeOffset = Math.floor(Math.random() * 200);
 
   try {
     const searchRes = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(randomChar)}&type=album&limit=20&offset=${safeOffset}`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(randomChar)}&type=track&limit=50&offset=${safeOffset}`,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
     );
-    const albums = searchRes.data.albums?.items;
-    if (albums && albums.length > 0) {
-      return albums[Math.floor(Math.random() * albums.length)];
+    const tracks = searchRes.data.tracks?.items;
+    if (tracks && tracks.length > 0) {
+      return tracks[Math.floor(Math.random() * tracks.length)];
     }
   } catch (e) {
-    console.error('Random search failed:', e.message);
+    console.error('Random track search failed:', e.message);
   }
 
   return null;
@@ -105,13 +105,13 @@ app.get('/search', async (req, res) => {
     const token = await getSpotifyToken();
     const query = req.query.q;
 
-    const chosenAlbum = await fetchSafeAlbum(token, query);
+    const chosenTrack = await fetchSafeTrack(token, query);
 
-    if (!chosenAlbum) {
+    if (!chosenTrack) {
       return res.json({ success: false, results: [] });
     }
 
-    const coverUrl = chosenAlbum.images[0]?.url;
+    const coverUrl = chosenTrack.album?.images[0]?.url;
     let pixelData = [];
 
     if (coverUrl) {
@@ -121,15 +121,17 @@ app.get('/search', async (req, res) => {
     res.json({
       success: true,
       results: [{
-        title: chosenAlbum.name || 'Unknown Title',
-        artist: chosenAlbum.artists?.[0]?.name || 'Unknown Artist',
-        releaseYear: chosenAlbum.release_date ? chosenAlbum.release_date.substring(0, 4) : 'N/A',
+        title: chosenTrack.name || 'Unknown Track',
+        artist: chosenTrack.artists?.[0]?.name || 'Unknown Artist',
+        album: chosenTrack.album?.name || 'Single',
+        releaseYear: chosenTrack.album?.release_date ? chosenTrack.album.release_date.substring(0, 4) : 'N/A',
+        previewUrl: chosenTrack.preview_url || '',
+        popularity: chosenTrack.popularity || 0,
         pixels: pixelData
       }]
     });
   } catch (error) {
     console.error('Search handler fatal error:', error.message);
-    // Return empty results rather than crashing with 500
     res.json({ success: false, results: [] });
   }
 });
