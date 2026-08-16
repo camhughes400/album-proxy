@@ -1,6 +1,6 @@
 const express = require('express');
 const axios = require('axios');
-const sharp = require('sharp'); // Make sure sharp is installed via npm
+const sharp = require('sharp');
 require('dotenv').config();
 
 const app = express();
@@ -33,13 +33,12 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// Convert Spotify Cover Image into a 300x300 RGB Pixel Matrix
+// Convert Spotify Cover Image into a 300x300 RGB Matrix
 async function processImageTo300Pixels(imageUrl) {
   try {
     const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
     const imageBuffer = Buffer.from(response.data, 'binary');
 
-    // Resize image to exactly 300x300 RGB raw pixels
     const { data, info } = await sharp(imageBuffer)
       .resize(300, 300, { fit: 'cover' })
       .raw()
@@ -55,7 +54,7 @@ async function processImageTo300Pixels(imageUrl) {
     }
     return pixelArray;
   } catch (err) {
-    console.error('Error processing 300x300 pixel image:', err.message);
+    console.error('Error processing 300x300 image:', err.message);
     return [];
   }
 }
