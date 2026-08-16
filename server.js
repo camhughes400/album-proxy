@@ -6,13 +6,13 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 10000;
 
--- Spotify & Roblox Environment Variables
+// Spotify & Roblox Environment Variables
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
 const ROBLOX_USER_ID = process.env.ROBLOX_USER_ID;
 
--- Token Cache
+// Token Cache
 let spotifyToken = null;
 let tokenExpiration = 0;
 
@@ -37,7 +37,7 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
--- Upload Decal to Roblox via Open Cloud Assets API
+// Upload Decal to Roblox via Open Cloud Assets API
 async function uploadDecalToRoblox(imageUrl, title) {
   if (!ROBLOX_API_KEY || !ROBLOX_USER_ID) {
     console.warn('Missing ROBLOX_API_KEY or ROBLOX_USER_ID in environment variables.');
@@ -45,11 +45,11 @@ async function uploadDecalToRoblox(imageUrl, title) {
   }
 
   try {
-    -- 1. Download image binary buffer from Spotify
+    // 1. Download image binary buffer from Spotify
     const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
     const imageBuffer = Buffer.from(imageResponse.data, 'binary');
 
-    -- 2. Build Open Cloud multipart form payload
+    // 2. Build Open Cloud multipart form payload
     const form = new FormData();
     form.append('request', JSON.stringify({
       assetType: 'Decal',
@@ -63,7 +63,7 @@ async function uploadDecalToRoblox(imageUrl, title) {
     }));
     form.append('fileContent', imageBuffer, { filename: 'cover.png', contentType: 'image/png' });
 
-    -- 3. Post to Roblox Open Cloud Assets API using x-api-key
+    // 3. Post to Roblox Open Cloud Assets API using x-api-key
     const response = await axios.post('https://apis.roblox.com/assets/v1/assets', form, {
       headers: {
         ...form.getHeaders(),
@@ -80,7 +80,7 @@ async function uploadDecalToRoblox(imageUrl, title) {
   }
 }
 
--- Search Endpoint
+// Search Endpoint
 app.get('/search', async (req, res) => {
   try {
     const searchQuery = req.query.q;
