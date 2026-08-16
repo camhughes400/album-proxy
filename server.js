@@ -12,7 +12,6 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 let spotifyToken = null;
 let tokenExpiration = 0;
 
-// Visual & Textual Blacklist for Roblox TOS Compliance
 const BANNED_ALBUMS = ['nevermind']; 
 const BANNED_KEYWORDS = ['explicit', 'uncensored', 'parental advisory'];
 
@@ -71,26 +70,14 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
-// 1. Track Search & Roll Endpoint
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
-    const rawQuery = req.query.q ? req.query.q.trim() : '';
-    let searchQuery = '';
-
-    if (rawQuery.startsWith('artist_name:')) {
-      const cleanArtist = rawQuery.replace('artist_name:', '').trim();
-      searchQuery = `artist:"${cleanArtist}"`;
-    } else if (rawQuery.startsWith('artist_id:')) {
-      const cleanArtistId = rawQuery.replace('artist_id:', '').trim();
-      searchQuery = `artist:"${cleanArtistId}"`;
-    } else {
-      searchQuery = rawQuery !== '' ? rawQuery : 'a';
-    }
-
+    const rawQuery = req.query.q ? req.query.q.trim() : 'a';
     const randomOffset = Math.floor(Math.random() * 5);
+
     const spotifyResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=${randomOffset}`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(rawQuery)}&type=track&limit=20&offset=${randomOffset}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
@@ -132,7 +119,6 @@ app.get('/search', async (req, res) => {
   }
 });
 
-// 2. Artist Search Endpoint for Appraisal UI
 app.get('/search-artist', async (req, res) => {
   try {
     const rawQuery = req.query.q ? req.query.q.trim() : '';
