@@ -12,6 +12,7 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 let spotifyToken = null;
 let tokenExpiration = 0;
 
+// Strictly Visual & Textual Blacklist for Roblox TOS
 const BANNED_ALBUMS = ['nevermind']; 
 const BANNED_KEYWORDS = ['explicit', 'uncensored', 'parental advisory'];
 
@@ -74,44 +75,52 @@ app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
     const rawQuery = req.query.q ? req.query.q.trim() : '';
-    let spotifyResponse;
+    let tracks = [];
 
+    // 1. Direct Spotify Artist ID Lookup
     if (rawQuery.startsWith('artist_id:')) {
       const artistId = rawQuery.replace('artist_id:', '');
-      spotifyResponse = await axios.get(
-        `https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      try {
+        const topTracksRes = await axios.get(
+          `https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        tracks = topTracksRes.data?.tracks || [];
+      } catch (err) {
+        console.warn('Top tracks fetch failed, falling back to query search.');
+      }
+
+      // If top-tracks was empty, query artist search as backup
+      if (tracks.length === 0) {
+        const artistInfo = await axios.get(
+          `https://api.spotify.com/v1/artists/${artistId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const artistName = artistInfo.data?.name || '';
+        const searchRes = await axios.get(
+          `https://api.spotify.com/v1/search?q=${encodeURIComponent('artist:"' + artistName + '"')}&type=track&limit=10`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        tracks = searchRes.data?.tracks?.items || [];
+      }
     } else {
+      // 2. Standard Dictionary / Word Search
       const searchQuery = rawQuery !== '' ? rawQuery : 'a';
       const randomOffset = Math.floor(Math.random() * 5);
-      spotifyResponse = await axios.get(
+      const searchRes = await axios.get(
         `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10&offset=${randomOffset}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      tracks = searchRes.data?.tracks?.items || [];
     }
 
-    let tracks = spotifyResponse.data.tracks?.items || spotifyResponse.data.tracks || [];
-
-    let safeTracks = tracks.filter(track => 
+    // STRICT METADATA & TITLE FILTER ONLY (No lyric or preview URL checks)
+    const safeTracks = tracks.filter(track => 
       track.explicit === false && 
       isCleanText(track.name) && 
-      isCleanText(track.album?.name)
+      isCleanText(track.album?.name) &&
+      isCleanText(track.artists[0]?.name)
     );
-
-    // Fallback if top-tracks filtering yields 0 safe songs
-    if (safeTracks.length === 0 && rawQuery.startsWith('artist_id:')) {
-      const fallbackSearch = await axios.get(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent('a')}&type=track&limit=10&offset=0`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      tracks = fallbackSearch.data.tracks?.items || [];
-      safeTracks = tracks.filter(track => 
-        track.explicit === false && 
-        isCleanText(track.name) && 
-        isCleanText(track.album?.name)
-      );
-    }
 
     if (safeTracks.length === 0) {
       return res.json({ success: false, results: [] });
