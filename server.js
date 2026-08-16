@@ -33,7 +33,6 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// Convert Spotify Cover Image into a 300x300 RGB Matrix
 async function processImageTo300Pixels(imageUrl) {
   try {
     const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
@@ -59,28 +58,54 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
-app.get('/search', async (req, res) => {
+// True Catalog Randomizer: Generates wildcard character combinations + deep offset jumps
+async function fetchObscureAndRandomAlbum(token) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  
+  // Create 2-letter wildcard combinations like "x%", "%ka%", "7%"
+  const char1 = chars.charAt(Math.floor(Math.random() * chars.length));
+  const char2 = chars.charAt(Math.floor(Math.random() * chars.length));
+  const searchQueries = [`${char1}${char2}`, `%${char1}${char2}%`, `${char1}*`];
+  const query = searchQueries[Math.floor(Math.random() * searchQueries.length)];
+
+  // Offset up to 400 deep into search results
+  const randomOffset = Math.floor(Math.random() * 400);
+
   try {
-    const searchQuery = req.query.q;
-    if (!searchQuery) {
-      return res.status(400).json({ error: 'Missing query parameter "q"' });
-    }
-
-    const token = await getSpotifyToken();
-
-    const spotifyResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=album&limit=5`,
+    const searchRes = await axios.get(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=album&limit=50&offset=${randomOffset}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    const albums = spotifyResponse.data.albums.items;
-    if (!albums || albums.length === 0) {
+    const albums = searchRes.data.albums?.items;
+    if (albums && albums.length > 0) {
+      // Pick a random album out of the 50 returned at this deep offset
+      return albums[Math.floor(Math.random() * albums.length)];
+    }
+  } catch (e) {
+    // Retry with basic query if offset is out of range
+  }
+
+  // Backup Query
+  const fallbackRes = await axios.get(
+    `https://api.spotify.com/v1/search?q=${encodeURIComponent(char1)}&type=album&limit=50&offset=${Math.floor(Math.random() * 50)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+  const fallbackAlbums = fallbackRes.data.albums?.items;
+  return fallbackAlbums ? fallbackAlbums[Math.floor(Math.random() * fallbackAlbums.length)] : null;
+}
+
+app.get('/search', async (req, res) => {
+  try {
+    const token = await getSpotifyToken();
+    const chosenAlbum = await fetchObscureAndRandomAlbum(token);
+
+    if (!chosenAlbum) {
       return res.json({ success: false, results: [] });
     }
 
-    const chosenAlbum = albums[Math.floor(Math.random() * albums.length)];
     const coverUrl = chosenAlbum.images[0]?.url;
-
     let pixelData = [];
     if (coverUrl) {
       pixelData = await processImageTo300Pixels(coverUrl);
