@@ -18,14 +18,19 @@ app.get('/search', async (req, res) => {
     const results = [];
 
     for (const album of albums) {
-      // Get the highest resolution cover image directly from Spotify (640x640)
-      const coverUrl = album.images[0]?.url || "";
+      const coverUrl = album.images[0]?.url;
+      let pixelData = [];
+
+      if (coverUrl) {
+        // Resizes image to 64x64 grid of RGB colors
+        pixelData = await processImageToPixels(coverUrl, 64);
+      }
 
       results.push({
         title: album.name,
         artist: album.artists[0]?.name || 'Unknown Artist',
         releaseYear: album.release_date ? album.release_date.substring(0, 4) : 'N/A',
-        coverUrl: coverUrl // Direct HD Image Link
+        pixels: pixelData
       });
     }
 
