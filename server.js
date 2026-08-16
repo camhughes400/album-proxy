@@ -74,49 +74,23 @@ app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
     const rawQuery = req.query.q ? req.query.q.trim() : '';
-    let tracks = [];
+    let searchQuery = '';
 
-    // 1. Direct Spotify Artist ID Lookup
-    if (rawQuery.startsWith('artist_id:')) {
-      const artistId = rawQuery.replace('artist_id:', '').trim();
-      
-      try {
-        const topTracksRes = await axios.get(
-          `https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        tracks = topTracksRes.data?.tracks || [];
-      } catch (err) {
-        console.warn('Top tracks lookup failed for ID:', artistId);
-      }
-
-      // Fallback: If top tracks is empty or fails, query exact artist name
-      if (tracks.length === 0) {
-        try {
-          const artistInfo = await axios.get(
-            `https://api.spotify.com/v1/artists/${artistId}`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          const artistName = artistInfo.data?.name || 'Hum';
-          const searchRes = await axios.get(
-            `https://api.spotify.com/v1/search?q=${encodeURIComponent('artist:"' + artistName + '"')}&type=track&limit=10`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          tracks = searchRes.data?.tracks?.items || [];
-        } catch (err) {
-          console.error('Artist fallback failed:', err.message);
-        }
-      }
+    // Convert artist_name queries directly into artist-field Spotify searches
+    if (rawQuery.startsWith('artist_name:')) {
+      const artistName = rawQuery.replace('artist_name:', '').trim();
+      searchQuery = `artist:"${artistName}"`;
     } else {
-      // 2. Standard Dictionary Search
-      const searchQuery = rawQuery !== '' ? rawQuery : 'a';
-      const randomOffset = Math.floor(Math.random() * 5);
-      const searchRes = await axios.get(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10&offset=${randomOffset}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      tracks = searchRes.data?.tracks?.items || [];
+      searchQuery = rawQuery !== '' ? rawQuery : 'a';
     }
+
+    const randomOffset = Math.floor(Math.random() * 5);
+    const spotifyResponse = await axios.get(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=${randomOffset}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const tracks = spotifyResponse.data?.tracks?.items || [];
 
     const safeTracks = tracks.filter(track => 
       track.explicit === false && 
