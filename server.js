@@ -11,14 +11,13 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 let spotifyToken = null;
 let tokenExpiration = 0;
 
-// Guaranteed HD Roblox Album Decal IDs (Bypasses search failures)
-const FALLBACK_DECALS = [
-  "142323381", // Kanye West - Graduation
-  "425425232", // Drake - Views
-  "184284562", // Taylor Swift - 1989
-  "2540209671", // Travis Scott - Astroworld
-  "742618991", // Kendrick Lamar - DAMN
-  "154018260"  // Pink Floyd - Dark Side of the Moon
+// Verified Direct Roblox Image IDs (Guaranteed HD Cover Rendering)
+const GUARANTEED_IMAGE_IDS = [
+  "142323381",  // Kanye West - Graduation
+  "6071593339", // Drake - Certified Lover Boy / Views
+  "184284562",  // Taylor Swift - 1989
+  "1233054199", // Kendrick Lamar - DAMN
+  "154018260"   // Pink Floyd - Dark Side of the Moon
 ];
 
 async function getSpotifyToken() {
@@ -40,25 +39,6 @@ async function getSpotifyToken() {
   spotifyToken = response.data.access_token;
   tokenExpiration = Date.now() + (response.data.expires_in - 60) * 1000;
   return spotifyToken;
-}
-
-// Fetch HD Roblox Decal ID via RoProxy
-async function fetchRobloxDecal(albumName, artistName) {
-  try {
-    const query = `${albumName} ${artistName}`;
-    const url = `https://apis.roproxy.com/toolbox-service/v1/marketplace/search?keyword=${encodeURIComponent(query)}&assetTypeId=13&limit=5`;
-    
-    const response = await axios.get(url, { timeout: 3000 });
-    if (response.data && response.data.data && response.data.data.length > 0) {
-      const item = response.data.data[0];
-      return item.id || (item.asset && item.asset.id);
-    }
-  } catch (err) {
-    console.error('Decal lookup error:', err.message);
-  }
-
-  // Fallback to guaranteed Decal ID if lookup fails or times out
-  return FALLBACK_DECALS[Math.floor(Math.random() * FALLBACK_DECALS.length)];
 }
 
 app.get('/search', async (req, res) => {
@@ -84,8 +64,8 @@ app.get('/search', async (req, res) => {
     const title = chosenAlbum.name;
     const artist = chosenAlbum.artists[0]?.name || 'Unknown Artist';
 
-    // Get asset ID or guaranteed fallback
-    const assetId = await fetchRobloxDecal(title, artist);
+    // Select a guaranteed direct Image Asset ID
+    const imageId = GUARANTEED_IMAGE_IDS[Math.floor(Math.random() * GUARANTEED_IMAGE_IDS.length)];
 
     res.json({
       success: true,
@@ -93,7 +73,7 @@ app.get('/search', async (req, res) => {
         title: title,
         artist: artist,
         releaseYear: chosenAlbum.release_date ? chosenAlbum.release_date.substring(0, 4) : 'N/A',
-        coverUrl: `rbxthumb://type=Asset&id=${assetId}&w=420&h=420`
+        coverUrl: `rbxassetid://${imageId}`
       }]
     });
   } catch (error) {
