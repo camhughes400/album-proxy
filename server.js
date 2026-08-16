@@ -60,7 +60,7 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
-// Fixed Track Search Engine (Safe Offsets & Clean Queries)
+// Fixed Track Search Engine (Safe Limit=20 and Safe Offset)
 async function fetchSafeTrack(token, searchQuery) {
   const popularKeywords = ['the', 'love', 'a', 'b', 'c', 'd', 'e', 'star', 'night', 'world', 'dance', 'light'];
 
@@ -69,12 +69,13 @@ async function fetchSafeTrack(token, searchQuery) {
     cleanQuery = popularKeywords[Math.floor(Math.random() * popularKeywords.length)];
   }
 
-  // Safe Offset bound strictly to <= 30
-  const safeOffset = Math.floor(Math.random() * 30);
+  // Keep offset small (0 to 15) to prevent Spotify pagination bounds errors
+  const safeOffset = Math.floor(Math.random() * 15);
 
+  // Attempt 1: Safe Query with limit=20
   try {
     const response = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(cleanQuery)}&type=track&limit=50&offset=${safeOffset}`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(cleanQuery)}&type=track&limit=20&offset=${safeOffset}`,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
     );
 
@@ -86,10 +87,10 @@ async function fetchSafeTrack(token, searchQuery) {
     console.error('Primary track search failed:', e.response?.data || e.message);
   }
 
-  // Fallback to Offset 0 if initial query failed
+  // Attempt 2: Fallback Query with offset=0 and limit=20
   try {
     const fallbackResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(cleanQuery)}&type=track&limit=50&offset=0`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(cleanQuery)}&type=track&limit=20&offset=0`,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
     );
     const fallbackTracks = fallbackResponse.data.tracks?.items;
