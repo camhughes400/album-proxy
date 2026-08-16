@@ -78,7 +78,6 @@ app.get('/search', async (req, res) => {
     const rawQuery = req.query.q ? req.query.q.trim() : '';
     let searchQuery = '';
 
-    // Convert artist_name / artist_id parameters into exact artist queries
     if (rawQuery.startsWith('artist_name:')) {
       const cleanArtist = rawQuery.replace('artist_name:', '').trim();
       searchQuery = `artist:"${cleanArtist}"`;
