@@ -33,10 +33,11 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
+// Simple pixel converter
 async function processImageTo300Pixels(imageUrl) {
   if (!imageUrl) return [];
   try {
-    const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 5000 });
+    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
     const imageBuffer = Buffer.from(response.data, 'binary');
 
     const { data, info } = await sharp(imageBuffer)
@@ -59,31 +60,20 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
-// 1. Search Track Endpoint (For Rolling)
+// 1. Simple Track Search (Limit 10)
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
     const rawQuery = req.query.q ? req.query.q.trim() : '';
-    const searchQuery = rawQuery !== '' ? rawQuery : 'year:2020';
-
-    const randomOffset = Math.floor(Math.random() * 5);
+    const searchQuery = rawQuery !== '' ? rawQuery : 'a';
 
     const spotifyResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=${randomOffset}`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    let tracks = spotifyResponse.data.tracks?.items;
-
+    const tracks = spotifyResponse.data.tracks?.items;
     if (!tracks || tracks.length === 0) {
-      const fallbackResponse = await axios.get(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=0`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      tracks = fallbackResponse.data.tracks?.items || [];
-    }
-
-    if (tracks.length === 0) {
       return res.json({ success: false, results: [] });
     }
 
@@ -107,12 +97,12 @@ app.get('/search', async (req, res) => {
       }]
     });
   } catch (error) {
-    console.error('Search handler error:', error.response?.data || error.message);
+    console.error('Search handler error:', error.message);
     res.json({ success: false, results: [] });
   }
 });
 
-// 2. Search Artist Endpoint (For Appraisal Menu)
+// 2. Simple Artist Search for Appraisal Menu
 app.get('/search-artist', async (req, res) => {
   try {
     const rawQuery = req.query.q ? req.query.q.trim() : '';
@@ -136,7 +126,7 @@ app.get('/search-artist', async (req, res) => {
 
     res.json({ success: true, results: formattedResults });
   } catch (error) {
-    console.error('Artist search error:', error.response?.data || error.message);
+    console.error('Artist search error:', error.message);
     res.json({ success: false, results: [] });
   }
 });
