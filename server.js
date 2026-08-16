@@ -12,13 +12,15 @@ const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 let spotifyToken = null;
 let tokenExpiration = 0;
 
-// Banned words in title or album name for extra family-friendly safety
+const BANNED_ALBUMS = ['nevermind']; 
 const BANNED_KEYWORDS = ['explicit', 'uncensored', 'parental advisory'];
 
 function isCleanText(text) {
   if (!text) return true;
   const lower = text.toLowerCase();
-  return !BANNED_KEYWORDS.some(word => lower.includes(word));
+  const hasBannedWord = BANNED_KEYWORDS.some(word => lower.includes(word));
+  const isBannedAlbum = BANNED_ALBUMS.some(album => lower.includes(album));
+  return !hasBannedWord && !isBannedAlbum;
 }
 
 async function getSpotifyToken() {
@@ -42,7 +44,6 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// Convert cover image to 300x300 RGB Matrix
 async function processImageTo300Pixels(imageUrl) {
   if (!imageUrl) return [];
   try {
@@ -69,38 +70,48 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
-// 1. Family-Friendly Track Search Endpoint (Limit = 10)
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
     const rawQuery = req.query.q ? req.query.q.trim() : '';
-    const searchQuery = rawQuery !== '' ? rawQuery : 'a';
+    let spotifyResponse;
 
-    const randomOffset = Math.floor(Math.random() * 5);
-
-    // Limit set to 10 to satisfy Spotify API rules
-    const spotifyResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10&offset=${randomOffset}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-
-    let tracks = spotifyResponse.data.tracks?.items || [];
-
-    // Fallback if offset returned 0 tracks
-    if (tracks.length === 0) {
-      const fallbackResponse = await axios.get(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10&offset=0`,
+    if (rawQuery.startsWith('artist_id:')) {
+      const artistId = rawQuery.replace('artist_id:', '');
+      spotifyResponse = await axios.get(
+        `https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=US`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      tracks = fallbackResponse.data.tracks?.items || [];
+    } else {
+      const searchQuery = rawQuery !== '' ? rawQuery : 'a';
+      const randomOffset = Math.floor(Math.random() * 5);
+      spotifyResponse = await axios.get(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10&offset=${randomOffset}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
     }
 
-    // STRICT FAMILY-FRIENDLY FILTER
-    const safeTracks = tracks.filter(track => 
+    let tracks = spotifyResponse.data.tracks?.items || spotifyResponse.data.tracks || [];
+
+    let safeTracks = tracks.filter(track => 
       track.explicit === false && 
       isCleanText(track.name) && 
       isCleanText(track.album?.name)
     );
+
+    // Fallback if top-tracks filtering yields 0 safe songs
+    if (safeTracks.length === 0 && rawQuery.startsWith('artist_id:')) {
+      const fallbackSearch = await axios.get(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent('a')}&type=track&limit=10&offset=0`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      tracks = fallbackSearch.data.tracks?.items || [];
+      safeTracks = tracks.filter(track => 
+        track.explicit === false && 
+        isCleanText(track.name) && 
+        isCleanText(track.album?.name)
+      );
+    }
 
     if (safeTracks.length === 0) {
       return res.json({ success: false, results: [] });
@@ -131,7 +142,6 @@ app.get('/search', async (req, res) => {
   }
 });
 
-// 2. Artist Search Endpoint for Appraisal Menu
 app.get('/search-artist', async (req, res) => {
   try {
     const rawQuery = req.query.q ? req.query.q.trim() : '';
@@ -148,6 +158,7 @@ app.get('/search-artist', async (req, res) => {
 
     const artists = response.data.artists?.items || [];
     const formattedResults = artists.map(a => ({
+      id: a.id,
       name: a.name,
       genres: a.genres && a.genres.length > 0 ? a.genres.slice(0, 2).join(', ') : 'Artist',
       imageUrl: a.images[0]?.url || ''
