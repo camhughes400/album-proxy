@@ -69,26 +69,27 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
-// 1. Family-Friendly Track Search Endpoint
+// 1. Family-Friendly Track Search Endpoint (Limit = 10)
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
     const rawQuery = req.query.q ? req.query.q.trim() : '';
     const searchQuery = rawQuery !== '' ? rawQuery : 'a';
 
-    const randomOffset = Math.floor(Math.random() * 10);
+    const randomOffset = Math.floor(Math.random() * 5);
 
+    // Limit set to 10 to satisfy Spotify API rules
     const spotifyResponse = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=${randomOffset}`,
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10&offset=${randomOffset}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
     let tracks = spotifyResponse.data.tracks?.items || [];
 
-    // Fallback if random offset produced 0 results
+    // Fallback if offset returned 0 tracks
     if (tracks.length === 0) {
       const fallbackResponse = await axios.get(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=20&offset=0`,
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=10&offset=0`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       tracks = fallbackResponse.data.tracks?.items || [];
