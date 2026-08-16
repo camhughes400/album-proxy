@@ -33,9 +33,11 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
+// Convert image URL to 300x300 RGB Matrix safely
 async function processImageTo300Pixels(imageUrl) {
+  if (!imageUrl) return [];
   try {
-    const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+    const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 5000 });
     const imageBuffer = Buffer.from(response.data, 'binary');
 
     const { data, info } = await sharp(imageBuffer)
@@ -53,53 +55,57 @@ async function processImageTo300Pixels(imageUrl) {
     }
     return pixelArray;
   } catch (err) {
-    console.error('Error processing 300x300 image:', err.message);
+    console.error('Error processing image pixels:', err.message);
     return [];
   }
 }
 
-// True Catalog Randomizer: Generates wildcard character combinations + deep offset jumps
-async function fetchObscureAndRandomAlbum(token) {
+// Safe Catalog Search with Error Fallbacks
+async function fetchSafeAlbum(token, searchQuery) {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  
-  // Create 2-letter wildcard combinations like "x%", "%ka%", "7%"
-  const char1 = chars.charAt(Math.floor(Math.random() * chars.length));
-  const char2 = chars.charAt(Math.floor(Math.random() * chars.length));
-  const searchQueries = [`${char1}${char2}`, `%${char1}${char2}%`, `${char1}*`];
-  const query = searchQueries[Math.floor(Math.random() * searchQueries.length)];
 
-  // Offset up to 400 deep into search results
-  const randomOffset = Math.floor(Math.random() * 400);
+  // If a specific artist query is passed in, use it directly
+  if (searchQuery && searchQuery.trim() !== '') {
+    try {
+      const artistRes = await axios.get(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=album&limit=20`,
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
+      );
+      const items = artistRes.data.albums?.items;
+      if (items && items.length > 0) {
+        return items[Math.floor(Math.random() * items.length)];
+      }
+    } catch (e) {
+      console.error('Artist search failed, falling back to random:', e.message);
+    }
+  }
+
+  -- Fallback: Safe Random Search
+  const randomChar = chars.charAt(Math.floor(Math.random() * chars.length));
+  const safeOffset = Math.floor(Math.random() * 50);
 
   try {
     const searchRes = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=album&limit=50&offset=${randomOffset}`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(randomChar)}&type=album&limit=20&offset=${safeOffset}`,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
     );
-
     const albums = searchRes.data.albums?.items;
     if (albums && albums.length > 0) {
-      // Pick a random album out of the 50 returned at this deep offset
       return albums[Math.floor(Math.random() * albums.length)];
     }
   } catch (e) {
-    // Retry with basic query if offset is out of range
+    console.error('Random search failed:', e.message);
   }
 
-  // Backup Query
-  const fallbackRes = await axios.get(
-    `https://api.spotify.com/v1/search?q=${encodeURIComponent(char1)}&type=album&limit=50&offset=${Math.floor(Math.random() * 50)}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-
-  const fallbackAlbums = fallbackRes.data.albums?.items;
-  return fallbackAlbums ? fallbackAlbums[Math.floor(Math.random() * fallbackAlbums.length)] : null;
+  return null;
 }
 
 app.get('/search', async (req, res) => {
   try {
     const token = await getSpotifyToken();
-    const chosenAlbum = await fetchObscureAndRandomAlbum(token);
+    const query = req.query.q;
+
+    const chosenAlbum = await fetchSafeAlbum(token, query);
 
     if (!chosenAlbum) {
       return res.json({ success: false, results: [] });
@@ -107,6 +113,7 @@ app.get('/search', async (req, res) => {
 
     const coverUrl = chosenAlbum.images[0]?.url;
     let pixelData = [];
+
     if (coverUrl) {
       pixelData = await processImageTo300Pixels(coverUrl);
     }
@@ -114,15 +121,16 @@ app.get('/search', async (req, res) => {
     res.json({
       success: true,
       results: [{
-        title: chosenAlbum.name,
-        artist: chosenAlbum.artists[0]?.name || 'Unknown Artist',
+        title: chosenAlbum.name || 'Unknown Title',
+        artist: chosenAlbum.artists?.[0]?.name || 'Unknown Artist',
         releaseYear: chosenAlbum.release_date ? chosenAlbum.release_date.substring(0, 4) : 'N/A',
         pixels: pixelData
       }]
     });
   } catch (error) {
-    console.error('Search handler error:', error.message);
-    res.status(500).json({ error: 'Failed to process request' });
+    console.error('Search handler fatal error:', error.message);
+    // Return empty results rather than crashing with 500
+    res.json({ success: false, results: [] });
   }
 });
 
