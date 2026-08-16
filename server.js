@@ -6,13 +6,11 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Spotify & Roblox Environment Variables
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
 const ROBLOX_USER_ID = process.env.ROBLOX_USER_ID;
 
-// Token Cache
 let spotifyToken = null;
 let tokenExpiration = 0;
 
@@ -45,11 +43,9 @@ async function uploadDecalToRoblox(imageUrl, title) {
   }
 
   try {
-    // 1. Download image binary buffer from Spotify
     const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
     const imageBuffer = Buffer.from(imageResponse.data, 'binary');
 
-    // 2. Build Open Cloud multipart form payload
     const form = new FormData();
     form.append('request', JSON.stringify({
       assetType: 'Decal',
@@ -63,7 +59,6 @@ async function uploadDecalToRoblox(imageUrl, title) {
     }));
     form.append('fileContent', imageBuffer, { filename: 'cover.png', contentType: 'image/png' });
 
-    // 3. Post to Roblox Open Cloud Assets API using x-api-key
     const response = await axios.post('https://apis.roblox.com/assets/v1/assets', form, {
       headers: {
         ...form.getHeaders(),
@@ -72,12 +67,37 @@ async function uploadDecalToRoblox(imageUrl, title) {
     });
 
     const data = response.data;
-    const assetId = data.assetId || (data.path ? data.path.split('/').pop() : null);
-    return assetId;
+    
+    // If Roblox returns an immediate assetId
+    if (data.assetId) {
+      return data.assetId;
+    }
+    
+    // If Roblox returns an Operation, poll for completion (or return operation ID)
+    if (data.path && data.done && data.response?.assetId) {
+      return data.response.assetId;
+    }
+
+    return null;
   } catch (err) {
     console.error('Roblox Open Cloud Upload Error:', err.response?.data || err.message);
     return null;
   }
+}
+
+// Search Roblox Marketplace for existing decal backup
+async function fetchRobloxDecalBackup(query) {
+  try {
+    const url = `https://apis.roproxy.com/toolbox-service/v1/marketplace/search?keyword=${encodeURIComponent(query + ' album cover')}&assetTypeId=13&limit=5`;
+    const response = await axios.get(url);
+    if (response.data?.data?.length > 0) {
+      const chosen = response.data.data[0];
+      return chosen.id || chosen.asset?.id;
+    }
+  } catch (e) {
+    console.error('Fallback Decal Search Failed:', e.message);
+  }
+  return null;
 }
 
 // Search Endpoint
@@ -105,16 +125,22 @@ app.get('/search', async (req, res) => {
     const chosenAlbum = albums[Math.floor(Math.random() * albums.length)];
     const coverUrl = chosenAlbum.images[0]?.url;
 
+    // 1. Try uploading to Open Cloud
     let robloxAssetId = null;
     if (coverUrl) {
       robloxAssetId = await uploadDecalToRoblox(coverUrl, chosenAlbum.name);
+    }
+
+    // 2. If upload fails or is pending, fallback to pre-uploaded Roblox Decal
+    if (!robloxAssetId) {
+      robloxAssetId = await fetchRobloxDecalBackup(chosenAlbum.name);
     }
 
     const result = {
       title: chosenAlbum.name,
       artist: chosenAlbum.artists[0]?.name || 'Unknown Artist',
       releaseYear: chosenAlbum.release_date ? chosenAlbum.release_date.substring(0, 4) : 'N/A',
-      coverUrl: robloxAssetId ? `rbxthumb://type=Asset&id=${robloxAssetId}&w=420&h=420` : coverUrl
+      coverUrl: robloxAssetId ? `rbxthumb://type=Asset&id=${robloxAssetId}&w=420&h=420` : ''
     };
 
     res.json({ success: true, results: [result] });
