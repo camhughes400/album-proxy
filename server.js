@@ -1,19 +1,19 @@
 const express = require('express');
 const axios = require('axios');
-const FormData = require('form-data');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Spotify API Credentials from Environment Variables
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const ROBLOX_API_KEY = process.env.ROBLOX_API_KEY;
-const ROBLOX_USER_ID = process.env.ROBLOX_USER_ID;
 
+// Token Cache
 let spotifyToken = null;
 let tokenExpiration = 0;
 
+// Get or refresh Spotify Access Token
 async function getSpotifyToken() {
   if (spotifyToken && Date.now() < tokenExpiration) {
     return spotifyToken;
@@ -35,72 +35,25 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// Upload Decal to Roblox via Open Cloud Assets API
-async function uploadDecalToRoblox(imageUrl, title) {
-  if (!ROBLOX_API_KEY || !ROBLOX_USER_ID) {
-    console.warn('Missing ROBLOX_API_KEY or ROBLOX_USER_ID in environment variables.');
-    return null;
-  }
-
+// Fetch pre-approved HD Roblox Decals via Marketplace Proxy
+async function fetchRobloxDecal(albumName, artistName) {
   try {
-    const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-    const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-
-    const form = new FormData();
-    form.append('request', JSON.stringify({
-      assetType: 'Decal',
-      displayName: title.substring(0, 30),
-      description: 'Automated Spotify Album Cover Upload',
-      creationContext: {
-        creator: {
-          userId: String(ROBLOX_USER_ID)
-        }
-      }
-    }));
-    form.append('fileContent', imageBuffer, { filename: 'cover.png', contentType: 'image/png' });
-
-    const response = await axios.post('https://apis.roblox.com/assets/v1/assets', form, {
-      headers: {
-        ...form.getHeaders(),
-        'x-api-key': ROBLOX_API_KEY
-      }
-    });
-
-    const data = response.data;
+    const query = `${albumName} ${artistName} album cover`;
+    const url = `https://apis.roproxy.com/toolbox-service/v1/marketplace/search?keyword=${encodeURIComponent(query)}&assetTypeId=13&limit=5`;
     
-    // If Roblox returns an immediate assetId
-    if (data.assetId) {
-      return data.assetId;
-    }
-    
-    // If Roblox returns an Operation, poll for completion (or return operation ID)
-    if (data.path && data.done && data.response?.assetId) {
-      return data.response.assetId;
-    }
-
-    return null;
-  } catch (err) {
-    console.error('Roblox Open Cloud Upload Error:', err.response?.data || err.message);
-    return null;
-  }
-}
-
-// Search Roblox Marketplace for existing decal backup
-async function fetchRobloxDecalBackup(query) {
-  try {
-    const url = `https://apis.roproxy.com/toolbox-service/v1/marketplace/search?keyword=${encodeURIComponent(query + ' album cover')}&assetTypeId=13&limit=5`;
     const response = await axios.get(url);
-    if (response.data?.data?.length > 0) {
-      const chosen = response.data.data[0];
-      return chosen.id || chosen.asset?.id;
+    if (response.data && response.data.data && response.data.data.length > 0) {
+      const item = response.data.data[0];
+      const assetId = item.id || (item.asset && item.asset.id);
+      return assetId;
     }
-  } catch (e) {
-    console.error('Fallback Decal Search Failed:', e.message);
+  } catch (err) {
+    console.error('Decal lookup error:', err.message);
   }
   return null;
 }
 
-// Search Endpoint
+// Search & Roll Endpoint
 app.get('/search', async (req, res) => {
   try {
     const searchQuery = req.query.q;
@@ -123,24 +76,17 @@ app.get('/search', async (req, res) => {
     }
 
     const chosenAlbum = albums[Math.floor(Math.random() * albums.length)];
-    const coverUrl = chosenAlbum.images[0]?.url;
+    const title = chosenAlbum.name;
+    const artist = chosenAlbum.artists[0]?.name || 'Unknown Artist';
 
-    // 1. Try uploading to Open Cloud
-    let robloxAssetId = null;
-    if (coverUrl) {
-      robloxAssetId = await uploadDecalToRoblox(coverUrl, chosenAlbum.name);
-    }
-
-    // 2. If upload fails or is pending, fallback to pre-uploaded Roblox Decal
-    if (!robloxAssetId) {
-      robloxAssetId = await fetchRobloxDecalBackup(chosenAlbum.name);
-    }
+    // Search existing pre-approved Roblox decal
+    const assetId = await fetchRobloxDecal(title, artist);
 
     const result = {
-      title: chosenAlbum.name,
-      artist: chosenAlbum.artists[0]?.name || 'Unknown Artist',
+      title: title,
+      artist: artist,
       releaseYear: chosenAlbum.release_date ? chosenAlbum.release_date.substring(0, 4) : 'N/A',
-      coverUrl: robloxAssetId ? `rbxthumb://type=Asset&id=${robloxAssetId}&w=420&h=420` : ''
+      coverUrl: assetId ? `rbxthumb://type=Asset&id=${assetId}&w=420&h=420` : ''
     };
 
     res.json({ success: true, results: [result] });
@@ -151,5 +97,5 @@ app.get('/search', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
