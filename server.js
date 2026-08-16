@@ -33,7 +33,7 @@ async function getSpotifyToken() {
   return spotifyToken;
 }
 
-// Convert track cover image to 300x300 RGB Matrix
+// Convert cover image to 300x300 RGB Matrix
 async function processImageTo300Pixels(imageUrl) {
   if (!imageUrl) return [];
   try {
@@ -60,41 +60,44 @@ async function processImageTo300Pixels(imageUrl) {
   }
 }
 
-// Track Search Handler
+// Fixed Track Search Engine (Safe Offsets & Clean Queries)
 async function fetchSafeTrack(token, searchQuery) {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const popularKeywords = ['the', 'love', 'a', 'b', 'c', 'd', 'e', 'star', 'night', 'world', 'dance', 'light'];
 
-  // Specific Artist/Song query
-  if (searchQuery && searchQuery.trim() !== '') {
-    try {
-      const artistRes = await axios.get(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=50`,
-        { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
-      );
-      const items = artistRes.data.tracks?.items;
-      if (items && items.length > 0) {
-        return items[Math.floor(Math.random() * items.length)];
-      }
-    } catch (e) {
-      console.error('Track search failed, trying fallback:', e.message);
-    }
+  let cleanQuery = searchQuery ? searchQuery.trim() : '';
+  if (!cleanQuery) {
+    cleanQuery = popularKeywords[Math.floor(Math.random() * popularKeywords.length)];
   }
 
-  // Global Random Track Fallback
-  const randomChar = chars.charAt(Math.floor(Math.random() * chars.length));
-  const safeOffset = Math.floor(Math.random() * 200);
+  // Safe Offset bound strictly to <= 30
+  const safeOffset = Math.floor(Math.random() * 30);
 
   try {
-    const searchRes = await axios.get(
-      `https://api.spotify.com/v1/search?q=${encodeURIComponent(randomChar)}&type=track&limit=50&offset=${safeOffset}`,
+    const response = await axios.get(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(cleanQuery)}&type=track&limit=50&offset=${safeOffset}`,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
     );
-    const tracks = searchRes.data.tracks?.items;
+
+    const tracks = response.data.tracks?.items;
     if (tracks && tracks.length > 0) {
       return tracks[Math.floor(Math.random() * tracks.length)];
     }
   } catch (e) {
-    console.error('Random track search failed:', e.message);
+    console.error('Primary track search failed:', e.response?.data || e.message);
+  }
+
+  // Fallback to Offset 0 if initial query failed
+  try {
+    const fallbackResponse = await axios.get(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(cleanQuery)}&type=track&limit=50&offset=0`,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
+    );
+    const fallbackTracks = fallbackResponse.data.tracks?.items;
+    if (fallbackTracks && fallbackTracks.length > 0) {
+      return fallbackTracks[Math.floor(Math.random() * fallbackTracks.length)];
+    }
+  } catch (e) {
+    console.error('Fallback track search failed:', e.response?.data || e.message);
   }
 
   return null;
@@ -126,7 +129,6 @@ app.get('/search', async (req, res) => {
         album: chosenTrack.album?.name || 'Single',
         releaseYear: chosenTrack.album?.release_date ? chosenTrack.album.release_date.substring(0, 4) : 'N/A',
         previewUrl: chosenTrack.preview_url || '',
-        popularity: chosenTrack.popularity || 0,
         pixels: pixelData
       }]
     });
